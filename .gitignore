@@ -24,3 +24,6 @@ aoc2019-*.tar
 
 .tool-versions
 .credentials
+
+inputs
+!inputs/.gitkeep
