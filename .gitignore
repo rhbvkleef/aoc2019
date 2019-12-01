@@ -23,3 +23,4 @@ erl_crash.dump
 aoc2019-*.tar
 
 .tool-versions
+.credentials
