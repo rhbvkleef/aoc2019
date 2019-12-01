@@ -1,0 +1,9 @@
+{application, aoc2019,
+ [{description, "Advent Of Code 2019 solutions"},
+  {vsn, "0.0.1"},
+  {registered, []},
+  {modules, []},
+  {applications, [kernel ,stdlib]},
+  {mod, {aoc2019, []}},
+  {env, []}
+ ]}.
