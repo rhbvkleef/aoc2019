@@ -27,8 +27,9 @@ get_all_lines(Device) ->
 
 run(Module) ->
 	Lines = readlines("inputs/" ++ atom_to_list(Module) ++ ".txt"),
-	erlang:display(Module:a(Lines)),
-	erlang:display(Module:b(Lines)).
+	io:format("Module: ~s\n", [Module]),
+	io:format("A: ~w\n", [Module:a(Lines)]),
+	io:format("B: ~w\n", [Module:b(Lines)]).
 
 start(_Mode, _Args) ->
 	lists:map(fun run/1, find_modules()),
