@@ -34,6 +34,8 @@ if [ ! -f ./test/solutions/aoc${YEAR}_${1}_tests.erl ]; then
 
 -include_lib(\"eunit/include/eunit.hrl\").
 
+-import(aoc${YEAR}_${1}, [a/1, b/1]).
+
 a_test() -> ?assert(false).
 b_test() -> ?assert(false)." > ./test/solutions/aoc${YEAR}_${1}_tests.erl
     echo "Created ./test/solutions/aoc${YEAR}_${1}_tests.erl"
