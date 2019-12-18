@@ -15,7 +15,6 @@
     instruction:: integer()
 }).
 
--spec execute(#pc{}, memory(), list(integer()), list(integer())) -> {#pc{}, memory(), list(integer()), list(integer())}.
 % 01 (ADD): #C = A + B; ?PC = ?PC + 4
 execute(#pc{instruction=I} = Pc, Memory, Input, Output) when I rem 100 == 1 ->
     [{_, A}, {_, B}, {Coff, _}] = read_instruction(Pc, Memory, 3),
@@ -132,7 +131,6 @@ execute(#pc{} = Pc, Memory, _, _) ->
 
 % For some reason, the length of the Modes array will be one longer (too long?) than lists:seq(1, Arity),
 % and I am not sure, so I just pad it to one less.
--spec read_instruction(#pc{}, memory(), non_neg_integer()) -> list({integer(), integer()}).
 read_instruction(#pc{pc=Pos, instruction=I}, Memory, Arity) ->
     XModes = lists:reverse(
         lists:sublist(
@@ -150,14 +148,12 @@ read_instruction(#pc{pc=Pos, instruction=I}, Memory, Arity) ->
 increment_pc(#pc{pc=I}, Memory, Arity) ->
     #pc{pc=I+Arity+1, instruction=array:get(I+Arity+1, Memory)}.
 
--spec run(#pc{}, memory(), list(integer()), list(integer())) -> {memory(), list(integer())}.
 run(#pc{pc = -1}, Memory, _, Output) ->
     {Memory, Output};
 run(#pc{} = Pc, Memory, Input, Output) ->
     {NewPc, NewMemory, NewInput, NewOutput} = execute(Pc, Memory, Input, Output),
     run(NewPc, NewMemory, NewInput, NewOutput).
 
--spec run(list(integer()), list(integer())) -> {list(integer()), list(integer())}.
 run(Memory, Input) ->
     Mem = array:from_list(Memory),
     {NewMem, Output} = run(#pc{pc=0, instruction=array:get(0, Mem)}, Mem, Input, []),
