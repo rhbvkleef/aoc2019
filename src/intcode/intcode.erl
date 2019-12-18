@@ -132,7 +132,7 @@ execute(#pc{} = Pc, Memory, _, _) ->
 
 % For some reason, the length of the Modes array will be one longer (too long?) than lists:seq(1, Arity),
 % and I am not sure, so I just pad it to one less.
--spec read_instruction(#pc{}, memory(), non_neg_integer()) -> list(integer()).
+-spec read_instruction(#pc{}, memory(), non_neg_integer()) -> list({integer(), integer()}).
 read_instruction(#pc{pc=Pos, instruction=I}, Memory, Arity) ->
     XModes = lists:reverse(
         lists:sublist(
