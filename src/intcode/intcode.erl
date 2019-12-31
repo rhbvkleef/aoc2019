@@ -1,235 +1,162 @@
+%% @doc
+%% This module defines `intcode' instruction set along with providing tools to read `intcode' programs from a string.
 -module(intcode).
 
--define(NODEBUG, yes_indeed_dont_show_me_debug_messages_as_i_hate_them).
--include_lib("eunit/include/eunit.hrl").
+-include("intcode.hrl").
 
 -export([
-    % Run functions
-    run/1, run/2, run/3,
-    % Utils
-    read_program/1, mem/1, out/1, 'finished?'/1,
-    % GenServer
-    init/1, handle_call/3, handle_cast/2, start_link/4
+    read_program/1,
+    instruction/1
 ]).
 
--behaviour(gen_server).
+-export_type([
+    memory/0, input/0, output/0, value/0, address/0, instruction/0
+]).
 
--record(pc, {
-    pc :: integer(),
-    instruction :: integer()
-}).
-
--type memory() :: array:array(integer()).
--type input(T) :: {module(), pid()} | list(T).
--type output(T) :: {module(), pid()} | list(T).
--type pc() :: #pc{pc::integer(), instruction::integer()}.
-
--spec execute(pc(), memory(), _, [any()]) -> {pc(), memory(), _, [any()]}.
-% 01 (ADD): #C = A + B; ?PC = ?PC + 4
-execute(#pc{instruction=I} = Pc, Memory, Input, Output) when I rem 100 == 1 ->
-    [{_, A}, {_, B}, {Coff, _}] = read_instruction(Pc, Memory, 3),
-    NewMem = array:set(Coff, A + B, Memory),
-    NewPc = increment_pc(Pc, NewMem, 3),
-    {
-        NewPc,
-        NewMem,
-        Input,
-        Output
-    };
-% 02 (MUL): #C = A * B; ?PC = ?PC + 4
-execute(#pc{instruction=I} = Pc, Memory, Input, Output) when I rem 100 == 2 ->
-    [{_, A}, {_, B}, {Coff, _}] = read_instruction(Pc, Memory, 3),
-    NewMem = array:set(Coff, A * B, Memory),
-    NewPc = increment_pc(Pc, NewMem, 3),
-    {
-        NewPc,
-        NewMem,
-        Input,
-        Output
-    };
-% 03 (INP): #A = ?IN; ?PC = ?PC + 2
-execute(#pc{instruction=I} = Pc, Memory, Input, Output) when I rem 100 == 3 ->
-    [{Aoff, _}] = read_instruction(Pc, Memory, 1),
-    {X, NewInput} = read_input(Input),
-    NewMem = array:set(Aoff, X, Memory),
-    NewPc = increment_pc(Pc, NewMem, 1),
-    {
-        NewPc,
-        NewMem,
-        NewInput,
-        Output
-    };
-% 04 (OUT): ?OUT = A; ?PC = ?PC + 2
-execute(#pc{instruction=I} = Pc, Memory, Input, Output) when I rem 100 == 4 ->
-    [{_, A}] = read_instruction(Pc, Memory, 1),
-    NewPc = increment_pc(Pc, Memory, 1),
-    NewOutput = write_output(Output, A),
-    {
-        NewPc,
-        Memory,
-        Input,
-        NewOutput
-    };
-% 05 (IFV): ?PC = B if A =/= 0 else (?PC + 3)
-execute(#pc{instruction=I} = Pc, Memory, Input, Output) when I rem 100 == 5 ->
-    [{_, A}, {_, B}] = read_instruction(Pc, Memory, 2),
-    case A of
-        0 -> NewPc = increment_pc(Pc, Memory, 2),
-            {
-                NewPc,
-                Memory,
-                Input,
-                Output
-            };
-        _ -> NewPc = #pc{pc=B, instruction=array:get(B, Memory)},
-            {
-                NewPc,
-                Memory,
-                Input,
-                Output
-            }
-    end;
-% 06 (IFZ): ?PC = B if A == 0 else (?PC + 3)
-execute(#pc{instruction=I} = Pc, Memory, Input, Output) when I rem 100 == 6 ->
-    [{_, A}, {_, B}] = read_instruction(Pc, Memory, 2),
-    case A of
-        0 -> NewPc = #pc{pc=B, instruction=array:get(B, Memory)},
-            {
-                NewPc,
-                Memory,
-                Input,
-                Output
-            };
-        _ -> NewPc = increment_pc(Pc, Memory, 2),
-            {
-                NewPc,
-                Memory,
-                Input,
-                Output
-            }
-    end;
-% 07 (CLT): #C = (1 if A < B else 0); ?PC = ?PC + 4
-execute(#pc{instruction=I} = Pc, Memory, Input, Output) when I rem 100 == 7 ->
-    [{_, A}, {_, B}, {Coff, _}] = read_instruction(Pc, Memory, 3),
-    NewMem = array:set(Coff, case A < B of true -> 1; _ -> 0 end, Memory),
-    NewPc = increment_pc(Pc, Memory, 3),
-    {
-        NewPc,
-        NewMem,
-        Input,
-        Output
-    };
-% 08 (CEQ): #C = (1 if A == B else 0); ?PC = ?PC + 4
-execute(#pc{instruction=I} = Pc, Memory, Input, Output) when I rem 100 == 8 ->
-    [{_, A}, {_, B}, {Coff, _}] = read_instruction(Pc, Memory, 3),
-    NewMem = array:set(Coff, case A == B of true -> 1; _ -> 0 end, Memory),
-    NewPc = increment_pc(Pc, Memory, 3),
-    {
-        NewPc,
-        NewMem,
-        Input,
-        Output
-    };
-% 99 (HLT): ?IW = -1, ?PC = -1 (effectively halts the machine)
-execute(#pc{instruction=I}, Memory, Input, Output) when I rem 100 == 99 ->
-    {
-        #pc{instruction = -1, pc = -1},
-        Memory,
-        Input,
-        Output
-    };
-execute(#pc{} = Pc, Memory, _, _) ->
-    erlang:error({x_bad_instruction, Pc, array:to_list(Memory)}).
-
-% For some reason, the length of the Modes array will be one longer (too long?) than lists:seq(1, Arity),
-% and I am not sure, so I just pad it to one less.
--spec read_instruction(pc(), memory(), non_neg_integer()) -> list({integer(), integer()}).
-read_instruction(#pc{pc=Pos, instruction=I}, Memory, Arity) ->
-    XModes = lists:reverse(
-        lists:sublist(
-            integer_to_list(I),
-            max(0, length(integer_to_list(I)) - 2))
-        ),
-    Modes = XModes ++ [$0 || _ <- lists:seq(1, Arity - length(XModes))],
-    Vs = [
-        case M of
-            $1 -> {array:get(O + Pos, Memory), array:get(O + Pos, Memory)};
-            _ -> {array:get(O + Pos, Memory), array:get(array:get(O + Pos, Memory), Memory)}
-        end || {M, O} <- lists:zip(Modes, lists:seq(1, Arity))],
-    Vs.
-
--spec increment_pc(pc(), memory(), non_neg_integer()) -> pc().
-increment_pc(#pc{pc=I}, Memory, Arity) ->
-    #pc{pc=I+Arity+1, instruction=array:get(I+Arity+1, Memory)}.
-
-procname() ->
-    case process_info(self(), registered_name) of
-        {registered_name, Name} -> Name;
-        _ -> self()
-    end.
-
--spec read_input(input(T)) -> {T, input(T)}.
-read_input({Module, Pid}) ->
-    Input = Module:poll(Pid),
-    ?debugFmt("~w: read ~w", [procname(), Input]),
-    {Input, {Module, Pid}};
-read_input([V|Vs]) -> {V, Vs}.
-
--spec write_output(output(T), T) -> output(T).
-write_output({Module, Pid}, Value) ->
-    ?debugFmt("~w: wrote ~w", [procname(), Value]),
-    Module:push(Pid, Value), {Module, Pid};
-write_output(Vs, Value) when is_list(Vs) -> [Value|Vs].
-
--spec run(pc(), memory(), input(integer()), output(integer())) -> {memory(), output(integer)}.
-run(#pc{pc = -1}, Memory, _, Output) ->
-    {Memory, Output};
-run(#pc{} = Pc, Memory, Input, Output) ->
-    {NewPc, NewMemory, NewInput, NewOutput} = execute(Pc, Memory, Input, Output),
-    ?debugFmt("~w: New state: ~w", [procname(), NewPc]),
-    run(NewPc, NewMemory, NewInput, NewOutput).
-
--spec run(memory()) -> {list(integer()), output(integer())}.
-run(Memory) -> run(Memory, []).
-
--spec run(memory(), input(integer())) -> {list(integer()), output(integer())}.
-run(Memory, Input) -> run(Memory, Input, []).
-
--spec run(memory(), input(integer()), output(integer())) -> {list(integer()), output(integer())}.
-run(Memory, Input, Output) ->
-    Mem = array:from_list(Memory),
-    Pc = #pc{pc=0, instruction=array:get(0, Mem)},
-    ?debugFmt("~w: New state: ~w", [procname(), Pc]),
-    {NewMem, NewOutput} = run(Pc, Mem, Input, Output),
-    {array:to_list(NewMem), NewOutput}.
-
--spec read_program(string()) -> list(integer()).
+%% @doc
+%% Reads an intcode program from a single unquoted CSV line.
+-spec read_program(Line :: string()) -> list(value()).
 read_program(Line) ->
     [list_to_integer(I) || I <- string:tokens(Line, ",")].
 
--spec mem({memory(), _} | pid()) -> memory().
-mem(Pid) when is_pid(Pid) -> gen_server:call(Pid, mem);
-mem({Mem, _Out}) -> Mem.
+%% @doc
+%% Defines the `intcode' instruction set:
+%%
+%% <table>
+%%   <thead>
+%%     <tr>
+%%       <th>Code</th>
+%%       <th>Instruction name</th>
+%%       <th>Description</th>
+%%     </tr>
+%%   </thead>
+%%   <tbody>
+%%     <tr>
+%%       <td>1</td>
+%%       <td>ADD</td>
+%%       <td>Set `#C=A+B'</td>
+%%     </tr>
+%%     <tr>
+%%       <td>2</td>
+%%       <td>MUL</td>
+%%       <td>Set `#C=A*B'.</td>
+%%     </tr>
+%%     <tr>
+%%       <td>3</td>
+%%       <td>INP</td>
+%%       <td>Read from input and store to `#A'</td>
+%%     </tr>
+%%     <tr>
+%%       <td>4</td>
+%%       <td>OUT</td>
+%%       <td>Write `A' to output</td>
+%%     </tr>
+%%     <tr>
+%%       <td>5</td>
+%%       <td>JNZ</td>
+%%       <td>Set `PC=#B' when `A=/=0'</td>
+%%     </tr>
+%%     <tr>
+%%       <td>6</td>
+%%       <td>JZ</td>
+%%       <td>Set `PC=#B' when `A==0'</td>
+%%     </tr>
+%%     <tr>
+%%       <td>7</td>
+%%       <td>TLT</td>
+%%       <td>Set `#C=1' when `A&lt;B', otherwise set `#C=0'</td>
+%%     </tr>
+%%     <tr>
+%%       <td>8</td>
+%%       <td>TEQ</td>
+%%       <td>Set `#C=1' when `A==B', otherwise set `#C=0'</td>
+%%     </tr>
+%%     <tr>
+%%       <td>99</td>
+%%       <td>HLT</td>
+%%       <td>Halt the VM</td>
+%%     </tr>
+%%   </tbody>
+%% </table>
+%% @param Code The instruction to look up
+%% @returns An instruction representation as defined by the {@type instruction()} type.
+-spec instruction(Code :: value()) -> instruction().
+instruction(1) -> alu(fun(A, B) -> A + B end);
+instruction(2) -> alu(fun(A, B) -> A * B end);
+instruction(3) -> {1, fun input/3};
+instruction(4) -> {1, fun output/3};
+instruction(5) -> jumpwhen(fun(A) -> A =/= 0 end);
+instruction(6) -> jumpwhen(fun(A) -> A == 0 end);
+instruction(7) -> alu(fun(A, B) when A < B -> 1; (_, _) -> 0 end);
+instruction(8) -> alu(fun(A, B) when A == B -> 1; (_, _) -> 0 end);
+instruction(99) -> {0, fun(_, #machine_state{pc = Pc}, VmState) -> {halt, #machine_state{pc = Pc}, VmState} end}.
 
--spec out({_, output(integer())} | pid()) -> output(integer()).
-out(Pid) when is_pid(Pid) -> gen_server:call(Pid, out);
-out({_Mem, Out}) when is_list(Out) -> lists:reverse(Out);
-out({_Mem, Out}) -> Out.
+-spec memset(address(), value(), memory()) -> memory().
+memset(Addr, Value, Mem) -> array:set(Addr, Value, Mem).
 
-'finished?'(Pid) -> gen_server:call(Pid, 'finished?').
+-spec memget(address(), memory()) -> value().
+memget(Addr, Mem) -> array:get(Addr, Mem).
 
-init({Args, Name}) ->
-    case Name of
-        nil -> nil;
-        Name -> register(Name, self())
-    end,
-    gen_server:cast(self(), run),
-    {ok, Args}.
+-spec alu(fun((value(), value()) -> value())) -> instruction().
+alu(Fun) ->
+    {3,
+        fun([{_, A}, {_, B}, {Coff, _}], #machine_state{mem = Memory}, VmState) ->
+            {continue, #machine_state{
+                mem = memset(Coff, Fun(A, B), Memory)
+            }, VmState}
+        end
+    }.
 
-start_link(Memory, Input, Output, Name) -> gen_server:start_link(intcode, {{Memory, Input, Output}, Name}, []).
+-spec input(list(instruction_argument()), machine_state(), vm_state()) -> {continuation_method(), machine_state()}.
+input([{Aoff, _}], #machine_state{mem = Memory} = MachineState, VmState) ->
+    case read_input({MachineState, VmState}) of
+        {ok, X, NewVmState} -> {continue,
+            #machine_state{
+                mem = memset(Aoff, X, Memory)
+            },
+            NewVmState
+        };
+        {sleep, NewVmState} -> {sleep,
+            MachineState,
+            NewVmState
+        }
+    end.
 
-handle_call(out, _From, State) -> {reply, out(State), State};
-handle_call(mem, _From, State) -> {reply, mem(State), State};
-handle_call('finished?', _From, State) -> {reply, ok, State}.
+-spec output(list(instruction_argument()), machine_state(), vm_state()) -> {continuation_method(), machine_state()}.
+output([{_, A}], MachineState, VmState) ->
+    {continue,
+        #machine_state{
+            output = write_output(MachineState#machine_state.output, A)
+        },
+        VmState
+    }.
 
-handle_cast(run, {Memory, Input, Output}) -> {noreply, run(Memory, Input, Output)}.
+
+-spec jumpwhen(fun((value()) -> boolean())) -> instruction().
+jumpwhen(Fun) -> {2,
+    fun([{_, A}, {_, B}], #machine_state{mem = Memory}, VmState) ->
+        case Fun(A) of
+            true -> {continue,
+                #machine_state{
+                    pc = #pc{
+                        pc = B,
+                        instruction = memget(B, Memory)
+                    }
+                },
+                VmState
+            };
+            _ -> {continue, #machine_state{}, VmState}
+        end
+    end}.
+
+-spec write_output(output(), value()) -> output().
+write_output(Output, Value) ->
+    intcode_io:push(Output, Value).
+
+-spec read_input(vm_state()) -> {sleep, vm_state()} | {ok, value(), vm_state()}.
+read_input({MachineState, #vm_state{input = Input, input_callback = InputCallback} = VmState}) ->
+    case intcode_io:poll_or_notify(Input, fun () -> InputCallback(MachineState, VmState) end) of
+        {V, NewInput} when V == nil orelse V == wait -> {sleep, VmState#vm_state{input = NewInput}};
+        {V, NewInput} -> {ok, V, VmState#vm_state{input = NewInput}}
+    end.
+

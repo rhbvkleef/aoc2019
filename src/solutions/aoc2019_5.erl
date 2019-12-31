@@ -5,14 +5,11 @@
     b/1
 ]).
 
--import(intcode, [out/1, run/2, read_program/1]).
+-import(intcode_server, [run_sync/3, output/1]).
+-import(intcode, [read_program/1]).
 
 a([Line|_]) ->
-    Program = read_program(Line),
-    Input = [1],
-    out(run(Program, Input)).
+    lists:last(output(run_sync(read_program(Line), [1], []))).
 
 b([Line|_]) ->
-    Program = read_program(Line),
-    Input = [5],
-    out(run(Program, Input)).
+    lists:last(output(run_sync(read_program(Line), [5], []))).
