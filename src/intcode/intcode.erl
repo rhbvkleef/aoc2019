@@ -5,19 +5,19 @@
 -include("intcode.hrl").
 
 -export([
-    read_program/1,
-    instruction/1
+  read_program/1,
+  instruction/1
 ]).
 
 -export_type([
-    memory/0, input/0, output/0, value/0, address/0, instruction/0
+  memory/0, input/0, output/0, value/0, address/0, instruction/0
 ]).
 
 %% @doc
 %% Reads an intcode program from a single unquoted CSV line.
 -spec read_program(Line :: string()) -> list(value()).
 read_program(Line) ->
-    [list_to_integer(I) || I <- string:tokens(Line, ",")].
+  [list_to_integer(I) || I <- string:tokens(Line, ",")].
 
 %% @doc
 %% Defines the `intcode' instruction set:
@@ -99,64 +99,74 @@ memget(Addr, Mem) -> array:get(Addr, Mem).
 
 -spec alu(fun((value(), value()) -> value())) -> instruction().
 alu(Fun) ->
-    {3,
-        fun([{_, A}, {_, B}, {Coff, _}], #machine_state{mem = Memory}, VmState) ->
-            {continue, #machine_state{
-                mem = memset(Coff, Fun(A, B), Memory)
-            }, VmState}
-        end
-    }.
+  {3,
+    fun([{_, A}, {_, B}, {Coff, _}], #machine_state{mem = Memory}, VmState) ->
+      {continue, #machine_state{
+        mem = memset(Coff, Fun(A, B), Memory)
+      }, VmState}
+    end
+  }.
 
--spec input(list(instruction_argument()), machine_state(), vm_state()) -> {continuation_method(), machine_state()}.
+-spec input(
+    InstructionArguments :: list(instruction_argument()),
+    CurrentMachineState :: machine_state(),
+    CurrentVmState :: vm_state()) ->
+  {ContinuationMethod :: continuation_method(), NewMachineStateDelta :: partial_machine_state(), NewVmState :: vm_state()}.
 input([{Aoff, _}], #machine_state{mem = Memory} = MachineState, VmState) ->
-    case read_input({MachineState, VmState}) of
-        {ok, X, NewVmState} -> {continue,
-            #machine_state{
-                mem = memset(Aoff, X, Memory)
-            },
-            NewVmState
-        };
-        {sleep, NewVmState} -> {sleep,
-            MachineState,
-            NewVmState
-        }
-    end.
+  case read_input(MachineState, VmState) of
+    {ok, X, NewVmState} -> {continue,
+      #machine_state{
+        mem = memset(Aoff, X, Memory)
+      },
+      NewVmState
+    };
+    {sleep, NewVmState} -> {sleep,
+      MachineState,
+      NewVmState
+    }
+  end.
 
--spec output(list(instruction_argument()), machine_state(), vm_state()) -> {continuation_method(), machine_state()}.
+-spec output(
+    InstructionArguments :: list(instruction_argument()),
+    CurrentMachineState :: machine_state(),
+    CurrentVmState :: VmState) ->
+  {continuation_method(), NewMachineStateDeltas :: partial_machine_state(), NewVmState :: VmState}
+  when VmState :: vm_state().
 output([{_, A}], MachineState, VmState) ->
-    {continue,
-        #machine_state{
-            output = write_output(MachineState#machine_state.output, A)
-        },
-        VmState
-    }.
+  {continue,
+    #machine_state{
+      output = write_output(MachineState#machine_state.output, A)
+    },
+    VmState
+  }.
 
 
 -spec jumpwhen(fun((value()) -> boolean())) -> instruction().
 jumpwhen(Fun) -> {2,
-    fun([{_, A}, {_, B}], #machine_state{mem = Memory}, VmState) ->
-        case Fun(A) of
-            true -> {continue,
-                #machine_state{
-                    pc = #pc{
-                        pc = B,
-                        instruction = memget(B, Memory)
-                    }
-                },
-                VmState
-            };
-            _ -> {continue, #machine_state{}, VmState}
-        end
-    end}.
+  fun([{_, A}, {_, B}], #machine_state{mem = Memory}, VmState) ->
+    case Fun(A) of
+      true -> {continue,
+        #machine_state{
+          pc = #pc{
+            pc = B,
+            instruction = memget(B, Memory)
+          }
+        },
+        VmState
+      };
+      _ -> {continue, #machine_state{}, VmState}
+    end
+  end}.
 
 -spec write_output(output(), value()) -> output().
 write_output(Output, Value) ->
-    intcode_io:push(Output, Value).
+  intcode_io:push(Output, Value).
 
--spec read_input(vm_state()) -> {sleep, vm_state()} | {ok, value(), vm_state()}.
-read_input({MachineState, #vm_state{input = Input, input_callback = InputCallback} = VmState}) ->
-    case intcode_io:poll_or_notify(Input, fun () -> InputCallback(MachineState, VmState) end) of
-        {V, NewInput} when V == nil orelse V == wait -> {sleep, VmState#vm_state{input = NewInput}};
-        {V, NewInput} -> {ok, V, VmState#vm_state{input = NewInput}}
-    end.
+-spec read_input(CurrentMachineState :: machine_state(), CurrentVmState :: vm_state()) ->
+  {sleep, NewVmState :: vm_state()} | {ok, Result :: value(), NewVmState :: vm_state()}.
+read_input(MachineState, #vm_state{input = Input, input_callback = InputCallback} = VmState) ->
+  case intcode_io:poll_or_notify(Input, fun() -> InputCallback(MachineState, VmState) end) of
+    {V, NewInput} when V == nil orelse V == wait -> {sleep, VmState#vm_state{input = NewInput}};
+    {V, NewInput} -> {ok, V, VmState#vm_state{input = NewInput}}
+  end.
 

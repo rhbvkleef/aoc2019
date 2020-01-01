@@ -19,6 +19,7 @@
   output = nil :: output() | nil
 }).
 -type machine_state() :: #machine_state{pc :: pc(), mem :: memory(), output :: output()}.
+-type partial_machine_state() :: machine_state() | #machine_state{pc :: pc() | nil, mem :: memory() | nil, output :: output() | nil}.
 
 -record(vm_state, {
   name = nil :: string() | nil,
@@ -33,5 +34,4 @@
   shutdown_listeners :: list({pid(), term()})
 }.
 
-%% @doc
 -type instruction() :: {instruction_arity(), fun((list(instruction_argument()), machine_state(), vm_state()) -> {continuation_method(), machine_state(), vm_state()})}.

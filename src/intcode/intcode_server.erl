@@ -24,15 +24,18 @@
 -behaviour(intcode_io).
 
 -record(?MODULE, {
-  reference :: {pid(), term()}
+  reference :: pid()
 }).
 
 %% @doc Starts a VM node with the provided memory and input and output
 %% providers (that implement intcode_io).
--spec start_link(memory(), input(), output()) -> {ok, pid()} | {error, {already_started, pid()}} | {error, Reason :: term()}.
+-spec start_link(
+    Memory :: list(value()),
+    Input :: input(),
+    Output :: output()) -> {ok, pid()} | {error, {already_started, pid()}} | {error, Reason :: term()}.
 start_link(Memory, Input, Output) -> start_link(Memory, Input, Output, nil, []).
 
-start_link([I|_] = Memory, Input, Output, Name, Opts) ->
+start_link([I | _] = Memory, Input, Output, Name, Opts) ->
   MachineState = #machine_state{
     pc = #pc{pc = 0, instruction = I},
     mem = array:from_list(Memory),
@@ -40,7 +43,8 @@ start_link([I|_] = Memory, Input, Output, Name, Opts) ->
   },
   VmState = #vm_state{
     name = Name,
-    input = Input
+    input = Input,
+    input_callback = fun(_, _) -> ok end
   },
   gen_server:start_link(?MODULE, {MachineState, VmState}, Opts).
 
@@ -78,11 +82,11 @@ output(Reference) -> as_list(Reference).
 
 %% @doc Get the output buffer as a list.
 as_list(#machine_state{output = Output}) -> intcode_io:as_list(Output);
-as_list(#?MODULE{reference = Ref}) -> as_list(state(Ref)).
+as_list(#?MODULE{} = Reference) -> as_list(state(Reference)).
 
 %% @doc Get the current memory.
 memory(#machine_state{mem = Memory}) -> array:to_list(Memory);
-memory(#?MODULE{reference = Ref}) -> memory(state(Ref)).
+memory(#?MODULE{} = Reference) -> memory(state(Reference)).
 
 %% @doc Wait for the VM to finish.
 'finished?'(#?MODULE{reference = Ref}) -> gen_server:call(Ref, wait_finish).
@@ -108,7 +112,7 @@ run_sync(Program, Input, Output) ->
 
 init({MachineState, VmState}) ->
   R = self(),
-  {ok, {MachineState, VmState#vm_state{input_callback = fun (_, _) -> start(#?MODULE{reference = R}) end}}}.
+  {ok, {MachineState, VmState#vm_state{input_callback = fun(_, _) -> start(#?MODULE{reference = R}) end}}}.
 
 handle_call(machine_state, _, {MachineState, _} = State) ->
   {reply, MachineState, State};
