@@ -158,7 +158,7 @@ init({MachineState, VmState}) ->
   {ok, {MachineState, VmState#vm_state{input_callback = fun(_, _) -> start(#?MODULE{reference = R}) end}}}.
 
 %% @doc Implement the handle_call function as specified by {@link gen_server}.
-%5
+%%
 %% The @spec'd type is a general type, as `edoc' has issues with rendering very
 %% complex typespecs.
 %% This is the actual typespec (which is the same as the type specified by the
@@ -199,7 +199,7 @@ handle_call(poll, _, {MachineState, RestState}) ->
   {reply, V, {MachineState#machine_state{output = Q}}, RestState};
 handle_call({poll_or_notify, Callback}, _, {MachineState, RestState}) ->
   case intcode_io:poll_or_notify(MachineState#machine_state.output, Callback) of
-    {R, Q} when R == wait -> {reply, sleep, {MachineState, RestState}};
+    {wait, Q} -> {reply, sleep, {MachineState, RestState}};
     {R, Q} -> {reply, R, {MachineState#machine_state{output = Q}, RestState}}
   end;
 handle_call(as_list, _, {MachineState, _} = State) ->
@@ -210,7 +210,7 @@ handle_call(wait_finish, From, {MachineState, VmState}) ->
   {noreply, {MachineState, VmState#vm_state{shutdown_listeners = [From | VmState#vm_state.shutdown_listeners]}}}.
 
 %% @doc Implement the handle_cast function as specified by {@link gen_server}.
-%5
+%%
 %% The @spec'd type is a general type, as `edoc' has issues with rendering very
 %% complex typespecs.
 %% This is the actual typespec (which is the same as the type specified by the
