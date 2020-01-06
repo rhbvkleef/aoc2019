@@ -50,10 +50,7 @@ poll(#?MODULE{reference = Ref} = Reference) -> {gen_server:call(Ref, poll), Refe
 %% @doc Pops an element from this queue.
 %% Defined by the {@link intcode_io} behaviour.
 poll_or_notify(#?MODULE{reference = Ref} = Reference, Callback) ->
-  case gen_server:call(Ref, {poll_notify, Callback}) of
-    wait -> {wait, Reference};
-    V -> {V, Reference}
-  end.
+  {gen_server:call(Ref, {poll_notify, Callback}), Reference}.
 
 %% @doc Returns the queue contents as a list.
 %% Defined by the {@link intcode_io} behaviour.

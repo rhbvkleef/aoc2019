@@ -5,8 +5,14 @@
 -include("intcode.hrl").
 
 -export([
+  % Actual public API
   read_program/1,
-  instruction/1
+
+  % API for VM implementations
+  instruction/1,
+  increment_pc/3,
+  advance/3,
+  read_instruction/2
 ]).
 
 -export_type([
@@ -20,7 +26,9 @@ read_program(Line) ->
   [list_to_integer(I) || I <- string:tokens(Line, ",")].
 
 %% @doc
-%% Defines the `intcode' instruction set:
+%% Defines the `intcode' instruction set.
+%%
+%% This function is intended to be used only by VM implementations.
 %%
 %% <table>
 %%   <thead>
@@ -64,7 +72,7 @@ read_program(Line) ->
 %%     <tr>
 %%       <td>7</td>
 %%       <td>TLT</td>
-%%       <td>Set `#C=1' when `A&lt;B', otherwise set `#C=0'</td>
+%%       <td>Set `#C=1' when `A<B', otherwise set `#C=0'</td>
 %%     </tr>
 %%     <tr>
 %%       <td>8</td>
@@ -91,12 +99,69 @@ instruction(7) -> alu(fun(A, B) when A < B -> 1; (_, _) -> 0 end);
 instruction(8) -> alu(fun(A, B) when A == B -> 1; (_, _) -> 0 end);
 instruction(99) -> {0, fun(_, #machine_state{pc = Pc}, VmState) -> {halt, #machine_state{pc = Pc}, VmState} end}.
 
+%% @doc Increments the program counter to the next instruction.
+%%
+%% This function is intended to be used only by VM implementations.
+-spec increment_pc(pc(), memory(), instruction_arity()) -> pc().
+increment_pc(#pc{pc = I}, Memory, Arity) ->
+  #pc{pc = I + Arity + 1, instruction = array:get(I + Arity + 1, Memory)}.
+
+%% @doc Updates `OldMachineState' with the deltas provided in
+%% `NewMachineStateDelta' and optionally advances the program counter with
+%% `Arity'.
+%%
+%% This function is intended to be used only by VM implementations.
+-spec advance(OldMachineState :: machine_state(), NewMachineStateDelta :: partial_machine_state(), Arity :: non_neg_integer()) -> machine_state().
+advance(#machine_state{pc = OldPc, mem = OldMem, output = OldOutp}, #machine_state{pc = NewPc, mem = NewMem, output = NewOutp}, Arity) ->
+  Pc = case {NewPc, NewMem} of
+         {nil, nil} -> increment_pc(OldPc, OldMem, Arity);
+         {nil, _} -> increment_pc(OldPc, NewMem, Arity);
+         _ -> NewPc
+       end,
+  Mem = case NewMem of nil -> OldMem; _ -> NewMem end,
+  Outp = case NewOutp of nil -> OldOutp; _ -> NewOutp end,
+  #machine_state{
+    pc = Pc,
+    mem = Mem,
+    output = Outp
+  }.
+
+%% @doc Decodes the instruction in the given program counter.
+%%
+%% This function is intended to be used only by VM implementations.
+%%
+%% For some reason, the length of the Modes array will be one longer (too long?) than lists:seq(1, Arity),
+%% and I am not sure, so I just pad it to one less.
+-spec read_instruction(ProgramCounter :: pc(), Memory :: memory()) ->
+  {
+    Arity :: non_neg_integer(),
+    Function :: fun((list(instruction_argument()), machine_state(), vm_state()) -> {continuation_method(), partial_machine_state(), vm_state()}),
+    InstructionArguments :: list(instruction_argument())
+  }.
+read_instruction(#pc{pc = Pos, instruction = I}, Memory) ->
+  {Arity, Function} = instruction(I rem 100),
+  XModes = lists:reverse(
+    lists:sublist(
+      integer_to_list(I),
+      max(0, length(integer_to_list(I)) - 2))
+  ),
+  Modes = XModes ++ [$0 || _ <- lists:seq(1, Arity - length(XModes))],
+  Vs = [
+    case M of
+      $1 -> {array:get(O + Pos, Memory), array:get(O + Pos, Memory)};
+      _ -> {array:get(O + Pos, Memory), array:get(array:get(O + Pos, Memory), Memory)}
+    end || {M, O} <- lists:zip(Modes, lists:seq(1, Arity))],
+  {Arity, Function, Vs}.
+
+%% @doc Sets the value at the given address in memory.
 -spec memset(address(), value(), memory()) -> memory().
 memset(Addr, Value, Mem) -> array:set(Addr, Value, Mem).
 
+%% @doc Returns the value at the given address in memory.
 -spec memget(address(), memory()) -> value().
 memget(Addr, Mem) -> array:get(Addr, Mem).
 
+%% @doc Returns an instruction specification for an ALU-like operation.
 -spec alu(fun((value(), value()) -> value())) -> instruction().
 alu(Fun) ->
   {3,
@@ -107,6 +172,8 @@ alu(Fun) ->
     end
   }.
 
+%% @doc Reads a value from the input to the address specified by the first
+%% argument to this function.
 -spec input(
     InstructionArguments :: list(instruction_argument()),
     CurrentMachineState :: machine_state(),
@@ -126,6 +193,7 @@ input([{Aoff, _}], #machine_state{mem = Memory} = MachineState, VmState) ->
     }
   end.
 
+%% @doc Outputs the value of the first argument to this function.
 -spec output(
     InstructionArguments :: list(instruction_argument()),
     CurrentMachineState :: machine_state(),
@@ -140,7 +208,8 @@ output([{_, A}], MachineState, VmState) ->
     VmState
   }.
 
-
+%% @doc Jumps when `Fun' returns ``'true' '' for the value of the first
+%% argument to this instruction.
 -spec jumpwhen(fun((value()) -> boolean())) -> instruction().
 jumpwhen(Fun) -> {2,
   fun([{_, A}, {_, B}], #machine_state{mem = Memory}, VmState) ->
@@ -158,10 +227,13 @@ jumpwhen(Fun) -> {2,
     end
   end}.
 
+%% @doc Writes the given value to the given output.
 -spec write_output(output(), value()) -> output().
 write_output(Output, Value) ->
   intcode_io:push(Output, Value).
 
+%% @doc Attempts to read input from the VM state, and if that fails, requests
+%% a notification from the input once input becomes available.
 -spec read_input(CurrentMachineState :: machine_state(), CurrentVmState :: vm_state()) ->
   {sleep, NewVmState :: vm_state()} | {ok, Result :: value(), NewVmState :: vm_state()}.
 read_input(MachineState, #vm_state{input = Input, input_callback = InputCallback} = VmState) ->
@@ -169,4 +241,3 @@ read_input(MachineState, #vm_state{input = Input, input_callback = InputCallback
     {V, NewInput} when V == nil orelse V == wait -> {sleep, VmState#vm_state{input = NewInput}};
     {V, NewInput} -> {ok, V, VmState#vm_state{input = NewInput}}
   end.
-

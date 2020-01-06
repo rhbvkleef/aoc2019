@@ -19,37 +19,46 @@
 -callback as_list(Reference) -> list(intcode:value())
   when Reference :: intcode_io().
 
-get_module(Descriptor) ->
-  element(1, Descriptor).
+get_module(Reference) ->
+  element(1, Reference).
 
-%% @doc
+%% @doc Pushes `Value' onto the queue described by `Descriptor'.
+%%
 %% Calls the `push/2' function on the module that is defined by the first
 %% element of the tuple of the first parameter with the same parameters that
 %% are passed to this function.
-push(Descriptor, Value) ->
-  Module = get_module(Descriptor),
-  Module:push(Descriptor, Value).
+-spec push(Reference, Value :: intcode:value()) -> Reference when Reference :: intcode_io().
+push(Reference, Value) ->
+  Module = get_module(Reference),
+  Module:push(Reference, Value).
 
-%% @doc
+%% @doc Polls a value from the queue described by `Descriptor'.
+%%
 %% Calls the `poll/1' function on the module that is defined by the first
 %% element of the tuple of the first parameter with the same parameter that
 %% is passed to this function.
-poll(Descriptor) ->
-  Module = get_module(Descriptor),
-  Module:poll(Descriptor).
+-spec poll(Reference) -> nil | {intcode:value(), Reference} when Reference :: intcode_io().
+poll(Reference) ->
+  Module = get_module(Reference),
+  Module:poll(Reference).
 
-%% @doc
+%% @doc Attempts to poll a value from the queue described by `Descriptor', but
+%% if that fails, calls the `Callback' function once a value becomes available.
+%%
 %% Calls the `async_poll/2' function on the module that is defined by the first
 %% element of the tuple of the first parameter with the same parameters that
 %% are passed to this function.
-poll_or_notify(Descriptor, Callback) ->
-  Module = get_module(Descriptor),
-  Module:poll_or_notify(Descriptor, Callback).
+-spec poll_or_notify(Reference, Callback :: fun(() -> any())) -> {intcode:value() | wait, Reference} when Reference :: intcode_io().
+poll_or_notify(Reference, Callback) ->
+  Module = get_module(Reference),
+  Module:poll_or_notify(Reference, Callback).
 
-%% @doc
+%% @doc Converts the queue described by `Descriptor' into a list.
+%%
 %% Calls the `as_list/1' function on the module that is defined by the first
 %% element of the tuple of the first parameter with the same parameter that
 %% is passed to this function.
-as_list(Descriptor) ->
-  Module = get_module(Descriptor),
-  Module:as_list(Descriptor).
+-spec as_list(Reference :: intcode_io()) -> list(intcode:value()).
+as_list(Reference) ->
+  Module = get_module(Reference),
+  Module:as_list(Reference).

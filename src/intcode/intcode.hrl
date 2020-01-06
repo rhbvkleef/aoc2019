@@ -1,4 +1,9 @@
--type continuation_method() :: continue | sleep | halt | crash.
+-type continuation_method() :: continue | sleep | halt.
+%% An instruction method can use these values to instruct the VM on how to
+%% proceed. `sleep' is commonly used when new input is desired, `continue'
+%% is used when the machine should just keep on executing. `halt' shuts down
+%% the VM.
+
 -type instruction_arity() :: integer().
 -type value() :: integer().
 -type address() :: value().

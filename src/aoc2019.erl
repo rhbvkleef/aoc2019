@@ -1,9 +1,8 @@
 -module(aoc2019).
 
 -export([
-	 start/2,
-	 find_modules/0
-	]).
+	 start/2
+]).
 
 load(I, Ms) ->
 	case code:ensure_loaded(list_to_atom("aoc2019_" ++ integer_to_list(I))) of
@@ -31,6 +30,9 @@ run(Module) ->
 	io:format("A: ~w\n", [Module:a(Lines)]),
 	io:format("B: ~w\n", [Module:b(Lines)]).
 
+%% @doc Run the `aoc2019' application.
+%% This application runs all solutions for the 2019 session of
+%% <a href="https://adventofcode.com">Advent Of Code</a>.
 start(_Mode, _Args) ->
 	lists:map(fun run/1, find_modules()),
 	{ok, self()}.
