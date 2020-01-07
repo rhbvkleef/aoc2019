@@ -27,8 +27,16 @@ get_all_lines(Device) ->
 run(Module) ->
 	Lines = readlines("inputs/" ++ atom_to_list(Module) ++ ".txt"),
 	io:format("Module: ~s\n", [Module]),
-	io:format("A: ~w\n", [Module:a(Lines)]),
-	io:format("B: ~w\n", [Module:b(Lines)]).
+	A = Module:a(Lines),
+	case is_list(A) of
+		true -> io:format("A: ~s\n", [A]);
+		_ -> io:format("A: ~w\n", [A])
+	end,
+	B = Module:b(Lines),
+	case is_list(B) of
+		true -> io:format("B: ~s\n", [B]);
+		_ -> io:format("B: ~w\n", [B])
+	end.
 
 %% @doc Run the `aoc2019' application.
 %% This application runs all solutions for the 2019 session of
