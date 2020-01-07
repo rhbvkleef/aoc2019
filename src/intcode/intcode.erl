@@ -2,6 +2,8 @@
 %% This module defines `intcode' instruction set along with providing tools to read `intcode' programs from a string.
 -module(intcode).
 
+-include_lib("eunit/include/eunit.hrl").
+
 -include("intcode.hrl").
 
 -export([
@@ -12,7 +14,7 @@
   instruction/1,
   increment_pc/3,
   advance/3,
-  read_instruction/2
+  read_instruction/1
 ]).
 
 -export_type([
@@ -97,6 +99,7 @@ instruction(5) -> jumpwhen(fun(A) -> A =/= 0 end);
 instruction(6) -> jumpwhen(fun(A) -> A == 0 end);
 instruction(7) -> alu(fun(A, B) when A < B -> 1; (_, _) -> 0 end);
 instruction(8) -> alu(fun(A, B) when A == B -> 1; (_, _) -> 0 end);
+instruction(9) -> {1, fun([{_, A}], #machine_state{relbase = RB}, VmState) -> {continue, #machine_state{relbase = A + RB}, VmState} end};
 instruction(99) -> {0, fun(_, #machine_state{pc = Pc}, VmState) -> {halt, #machine_state{pc = Pc}, VmState} end}.
 
 %% @doc Increments the program counter to the next instruction.
@@ -112,7 +115,7 @@ increment_pc(#pc{pc = I}, Memory, Arity) ->
 %%
 %% This function is intended to be used only by VM implementations.
 -spec advance(OldMachineState :: machine_state(), NewMachineStateDelta :: partial_machine_state(), Arity :: non_neg_integer()) -> machine_state().
-advance(#machine_state{pc = OldPc, mem = OldMem, output = OldOutp}, #machine_state{pc = NewPc, mem = NewMem, output = NewOutp}, Arity) ->
+advance(#machine_state{pc = OldPc, mem = OldMem, output = OldOutp, relbase = OldRelBase}, #machine_state{pc = NewPc, mem = NewMem, output = NewOutp, relbase = NewRelBase}, Arity) ->
   Pc = case {NewPc, NewMem} of
          {nil, nil} -> increment_pc(OldPc, OldMem, Arity);
          {nil, _} -> increment_pc(OldPc, NewMem, Arity);
@@ -120,10 +123,12 @@ advance(#machine_state{pc = OldPc, mem = OldMem, output = OldOutp}, #machine_sta
        end,
   Mem = case NewMem of nil -> OldMem; _ -> NewMem end,
   Outp = case NewOutp of nil -> OldOutp; _ -> NewOutp end,
+  RelBase = case NewRelBase of nil -> OldRelBase; _ -> NewRelBase end,
   #machine_state{
     pc = Pc,
     mem = Mem,
-    output = Outp
+    output = Outp,
+    relbase = RelBase
   }.
 
 %% @doc Decodes the instruction in the given program counter.
@@ -132,13 +137,13 @@ advance(#machine_state{pc = OldPc, mem = OldMem, output = OldOutp}, #machine_sta
 %%
 %% For some reason, the length of the Modes array will be one longer (too long?) than lists:seq(1, Arity),
 %% and I am not sure, so I just pad it to one less.
--spec read_instruction(ProgramCounter :: pc(), Memory :: memory()) ->
+-spec read_instruction(machine_state()) ->
   {
     Arity :: non_neg_integer(),
     Function :: fun((list(instruction_argument()), machine_state(), vm_state()) -> {continuation_method(), partial_machine_state(), vm_state()}),
     InstructionArguments :: list(instruction_argument())
   }.
-read_instruction(#pc{pc = Pos, instruction = I}, Memory) ->
+read_instruction(#machine_state{pc=#pc{pc = Pos, instruction = I}, mem=Memory, relbase = Relbase}) ->
   {Arity, Function} = instruction(I rem 100),
   XModes = lists:reverse(
     lists:sublist(
@@ -149,6 +154,7 @@ read_instruction(#pc{pc = Pos, instruction = I}, Memory) ->
   Vs = [
     case M of
       $1 -> {array:get(O + Pos, Memory), array:get(O + Pos, Memory)};
+      $2 -> {array:get(O + Pos, Memory) + Relbase, array:get(array:get(O + Pos, Memory) + Relbase, Memory)};
       _ -> {array:get(O + Pos, Memory), array:get(array:get(O + Pos, Memory), Memory)}
     end || {M, O} <- lists:zip(Modes, lists:seq(1, Arity))],
   {Arity, Function, Vs}.
@@ -159,7 +165,7 @@ memset(Addr, Value, Mem) -> array:set(Addr, Value, Mem).
 
 %% @doc Returns the value at the given address in memory.
 -spec memget(address(), memory()) -> value().
-memget(Addr, Mem) -> array:get(Addr, Mem).
+memget(Addr, Mem) -> case Addr >= array:size(Mem) of true -> 0; _ -> array:get(Addr, Mem) end.
 
 %% @doc Returns an instruction specification for an ALU-like operation.
 -spec alu(fun((value(), value()) -> value())) -> instruction().

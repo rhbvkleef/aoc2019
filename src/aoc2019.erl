@@ -28,7 +28,7 @@ run(Module) ->
 	Lines = readlines("inputs/" ++ atom_to_list(Module) ++ ".txt"),
 	io:format("Module: ~s\n", [Module]),
 	A = Module:a(Lines),
-	case is_list(A) of
+	case is_list(A) andalso io_lib:printable_list(A) of
 		true -> io:format("A: ~s\n", [A]);
 		_ -> io:format("A: ~w\n", [A])
 	end,

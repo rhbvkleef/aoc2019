@@ -22,7 +22,7 @@
   instruction/1,
   increment_pc/3,
   advance/3,
-  read_instruction/2
+  read_instruction/1
 ]).
 
 -behaviour(gen_server).
@@ -55,8 +55,9 @@ start_link(Memory, Input, Output) -> start_link(Memory, Input, Output, nil, []).
 start_link([I | _] = Memory, Input, Output, Name, Opts) ->
   MachineState = #machine_state{
     pc = #pc{pc = 0, instruction = I},
-    mem = array:from_list(Memory),
-    output = Output
+    mem = array:from_list(Memory, 0),
+    output = Output,
+    relbase = 0
   },
   VmState = #vm_state{
     name = Name,
@@ -252,7 +253,7 @@ handle_cast(stop, State) ->
 %% respectively.
 -spec loop(machine_state(), vm_state()) -> {sleep | halt, machine_state(), vm_state()}.
 loop(#machine_state{pc = Pc, mem = Mem} = MachineState, VmState) ->
-  {Arity, Function, Vs} = read_instruction(Pc, Mem),
+  {Arity, Function, Vs} = read_instruction(MachineState),
   case Function(Vs, MachineState, VmState) of
     {continue, NewMachineState, NewVmState} ->
       loop(advance(MachineState, NewMachineState, Arity), NewVmState);
